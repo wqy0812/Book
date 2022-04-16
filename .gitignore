@@ -5,3 +5,4 @@ nohup.out
 usercache.json
 
 *.idea/*
+/mcManager/.idea/*
