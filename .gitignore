@@ -3,6 +3,8 @@
 /world/*
 nohup.out
 usercache.json
+ops.json
 
-*.idea/*
-/mcManager/.idea/*
+*idea*
+
+
