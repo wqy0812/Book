@@ -4,4 +4,4 @@
 nohup.out
 usercache.json
 
-*/.idea/*
+*.idea/*
