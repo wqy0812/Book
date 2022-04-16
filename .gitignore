@@ -1,3 +1,5 @@
 /crash-reports/*
 /logs/*
 /world/*
+nohup.out
+usercache.json
