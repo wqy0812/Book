@@ -3,3 +3,5 @@
 /world/*
 nohup.out
 usercache.json
+
+*/.idea/*
