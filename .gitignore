@@ -1,11 +1,7 @@
-/crash-reports/*
 /logs/*
 /world/*
-nohup.out
 usercache.json
 usernamecache.json
 ops.json
-schematics/*
-*idea*
-
-
+server.properties
+*.idea*
