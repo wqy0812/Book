@@ -1,13 +1,16 @@
 package main
 
 import (
-	"fmt"
-	"github.com/hpcloud/tail"
-	log "github.com/sirupsen/logrus"
+	"bytes"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hpcloud/tail"
+	log "github.com/sirupsen/logrus"
 )
 
 type playerStatus struct {
@@ -30,7 +33,7 @@ func main() {
 	log.SetOutput(logFile)
 	defer logFile.Close()
 
-	err, result := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml list")
+	result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml list")
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -56,7 +59,7 @@ func main() {
 	}
 	tails, err := tail.TailFile(fileName, config)
 	if err != nil {
-		fmt.Println("tail file failed, err:", err)
+		log.Println("tail file failed, err:", err)
 		return
 	}
 	var (
@@ -66,12 +69,12 @@ func main() {
 	for {
 		line, ok = <-tails.Lines
 		if !ok {
-			fmt.Printf("tail file close reopen, filename:%s\n", tails.Filename)
+			log.Printf("tail file close reopen, filename:%s\n", tails.Filename)
 			time.Sleep(time.Second)
 			continue
 		}
 		contents := strings.Fields(line.Text)
-		if len(contents) < 5 {
+		if len(contents) <= 5 {
 			continue
 		}
 
@@ -96,39 +99,51 @@ func main() {
 		var playerName string
 		if strings.HasPrefix(contents[3], "<") && strings.HasSuffix(contents[3], ">") {
 			playerName = contents[3][1 : len(contents[3])-1]
-			fmt.Println(playerName, contents[4])
-		}
+			log.Println(playerName, contents[4])
 
-		if strings.HasPrefix(contents[4], "一起睡觉") {
-			err, result = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time query daytime\"")
-			log.Println("查询时间：", result)
-			if err != nil {
-				log.Fatal(err)
-				return
-			}
-			timeStr := strings.Fields(result)[3]
-			timeInt, err := strconv.Atoi(timeStr)
-			if err != nil {
-				log.Fatal("字符转换失败", timeStr)
-				return
-			}
-			if timeInt < 13000 {
-				log.Println("还没到晚上")
-				continue
-			}
+			if strings.HasPrefix(contents[4], "一起睡觉") {
+				result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time query daytime\"")
+				log.Println("查询时间：", result)
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				timeStr := strings.Fields(result)[3]
+				timeInt, err := strconv.Atoi(timeStr)
+				if err != nil {
+					log.Fatal("字符转换失败", timeStr)
+					return
+				}
+				if timeInt < 14000 {
+					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 还不能睡觉哦\"")
+					if err != nil {
+						log.Fatal(err)
+						return
+					}
+					log.Println(result)
+					continue
+				}
 
-			//开启投票
-			if !ifSleepVote {
-				ifSleepVote = true
-				go nightThrough(voteChan)
+				//开启投票
+				if !ifSleepVote {
+					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 一起睡觉！\"")
+					if err != nil {
+						log.Fatal(err)
+						return
+					}
+					log.Println(result)
+
+					ifSleepVote = true
+					go nightThrough(voteChan)
+				}
+				playerTmp := playerStatus{
+					playerName: playerName,
+					ifSleep:    true,
+					ifOnline:   true,
+				}
+				//进行投票
+				voteChan <- playerTmp
 			}
-			playerTmp := playerStatus{
-				playerName: playerName,
-				ifSleep:    true,
-				ifOnline:   true,
-			}
-			//进行投票
-			voteChan <- playerTmp
 		}
 	}
 }
@@ -150,13 +165,31 @@ func nightThrough(votes chan playerStatus) {
 				}
 			}
 		}
+		if onlineNum == 1 {
+			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 1个人自生自灭吧\"")
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
+			log.Println(result)
+			return
+		}
+		if onlineNum == 2 {
+			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 2个人一起睡有点少\"")
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
+			log.Println(result)
+			return
+		}
 		log.Println("sleepNum:"+strconv.Itoa(sleepNum), "onlineNum:"+strconv.Itoa(onlineNum))
 
 		//在线玩家睡觉超过一半
 		if sleepNum > (onlineNum / 2) {
 			ifSleepVote = false
 			//执行白天
-			err, result := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time set 1000\"")
+			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time set 1000\"")
 			log.Println("执行白天：", result)
 			if err != nil {
 				log.Fatal(err)
@@ -172,4 +205,21 @@ func nightThrough(votes chan playerStatus) {
 			return
 		}
 	}
+}
+
+func shell(command string) (string, error) {
+	log.Println(command)
+	cmd := exec.Command("/bin/bash", "-c", command)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
+func printPlayerMap() {
+	bytes, err := json.Marshal(playerMap)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(string(bytes))
 }
