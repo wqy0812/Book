@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"strconv"
@@ -23,11 +22,10 @@ func shell(command string) (string, error) {
 }
 
 func printPlayerMap() {
-	bytes, err := json.Marshal(playerMap)
-	if err != nil {
-		log.Println(err)
+	log.Println("名字 睡觉 在线")
+	for k, v := range playerMap {
+		log.Println(k, v.Sleep, v.Online)
 	}
-	log.Println(string(bytes))
 }
 
 type playerStatus struct {
@@ -44,7 +42,7 @@ func main() {
 	voteChan := make(chan playerStatus, 20)
 	playerMap = make(map[string]playerStatus)
 
-	logFile, err := os.OpenFile("gogogo.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	logFile, err := os.OpenFile("mcm.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Println(err)
 	}
@@ -85,6 +83,7 @@ func main() {
 		line *tail.Line
 		ok   bool
 	)
+	log.Println("START")
 	for {
 		line, ok = <-tails.Lines
 		if !ok {
@@ -93,7 +92,7 @@ func main() {
 			continue
 		}
 		contents := strings.Fields(line.Text)
-		if len(contents) <= 5 {
+		if len(contents) < 5 {
 			continue
 		}
 
@@ -138,36 +137,39 @@ func main() {
 				}
 				//没到点
 				if timeInt < 14000 {
-					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 还不能睡觉哦\"")
+					remainTimeToSleep := strconv.Itoa(int(float32(14000-timeInt) * 0.05))
+					_, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 还要" + remainTimeToSleep + "秒才能睡哦！\"")
 					if err != nil {
 						log.Fatal(err)
 						return
 					}
-					log.Println(result)
 					continue
 				}
 				//人数不够
-				if onlineNum <= 3 {
-					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 3个人以上才开启\"")
+				if onlineNum < 3 {
+					_, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 3个人以上才开启！\"")
 					if err != nil {
 						log.Fatal(err)
 						return
 					}
-					log.Println(result)
 					continue
 				}
 
 				//开启投票
 				if !ifSleepVote {
-					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 一起睡觉！\"")
+					_, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 开始睡觉投票！(60s)\"")
 					if err != nil {
 						log.Fatal(err)
 						return
 					}
-					log.Println(result)
 
 					ifSleepVote = true
-					go nightThrough(voteChan)
+					destroy := make(chan bool)
+					go func() {
+						time.Sleep(60 * time.Second)
+						destroy <- true
+					}()
+					go nightThrough(voteChan, destroy)
 				}
 
 				//进行投票
@@ -182,44 +184,62 @@ func main() {
 	}
 }
 
-func nightThrough(votes chan playerStatus) {
-	for vote := range votes {
-		//投票
-		log.Println(vote)
-		playerMap[vote.PlayerName] = vote
-		printPlayerMap()
-
-		//统计睡觉玩家数量
-		online := 0
-		sleepy := 0
-		for _, player := range playerMap {
-			if player.Online {
-				online++
-				if player.Sleep {
-					sleepy++
+func nightThrough(votes chan playerStatus, destroy chan bool) {
+	for {
+		select {
+		case vote := <-votes:
+			//投票
+			playerMap[vote.PlayerName] = vote
+			//统计睡觉玩家数量
+			online := 0
+			sleepy := 0
+			for _, player := range playerMap {
+				if player.Online {
+					online++
+					if player.Sleep {
+						sleepy++
+					}
 				}
 			}
-		}
-		log.Println("sleey:"+strconv.Itoa(sleepy), "online:"+strconv.Itoa(online))
+			log.Println("sleey:"+strconv.Itoa(sleepy), "online:"+strconv.Itoa(online))
 
-		//在线玩家睡觉超过一半
-		if sleepy > (online / 2) {
-			ifSleepVote = false
-			//执行白天
-			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time set 1000\"")
-			log.Println("执行白天：", result)
-			if err != nil {
-				log.Fatal(err)
+			//在线玩家睡觉超过一半
+			if sleepy > (online / 2) {
+				//执行白天
+				result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time set 1000\"")
+				log.Println("执行白天：", result)
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+				_, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 天亮了！\"")
+				if err != nil {
+					log.Fatal(err)
+					return
+				}
+
+				//置醒
+				for _, player := range playerMap {
+					player.Sleep = false
+					playerMap[player.PlayerName] = player
+				}
+				ifSleepVote = false
 				return
 			}
 
+		case <-destroy:
 			//置醒
 			for _, player := range playerMap {
 				player.Sleep = false
 				playerMap[player.PlayerName] = player
 			}
-			printPlayerMap()
+			ifSleepVote = false
+			_, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 投票过期！\"")
+			if err != nil {
+				log.Fatal(err)
+			}
 			return
 		}
 	}
+
 }
