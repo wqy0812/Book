@@ -13,6 +13,23 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func shell(command string) (string, error) {
+	log.Println(command)
+	cmd := exec.Command("/bin/bash", "-c", command)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
+func printPlayerMap() {
+	bytes, err := json.Marshal(playerMap)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(string(bytes))
+}
+
 type playerStatus struct {
 	playerName string
 	ifSleep    bool
@@ -205,21 +222,4 @@ func nightThrough(votes chan playerStatus) {
 			return
 		}
 	}
-}
-
-func shell(command string) (string, error) {
-	log.Println(command)
-	cmd := exec.Command("/bin/bash", "-c", command)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	return out.String(), err
-}
-
-func printPlayerMap() {
-	bytes, err := json.Marshal(playerMap)
-	if err != nil {
-		log.Println(err)
-	}
-	log.Println(string(bytes))
 }
