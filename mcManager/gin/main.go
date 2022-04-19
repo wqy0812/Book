@@ -31,9 +31,9 @@ func printPlayerMap() {
 }
 
 type playerStatus struct {
-	playerName string
-	ifSleep    bool
-	ifOnline   bool
+	PlayerName string
+	Sleep      bool
+	Online     bool
 }
 
 var playerMap map[string]playerStatus
@@ -60,8 +60,8 @@ func main() {
 	for _, n := range names {
 		//初始化
 		playerMap[strings.TrimSpace(n)] = playerStatus{
-			playerName: strings.TrimSpace(n),
-			ifOnline:   true,
+			PlayerName: strings.TrimSpace(n),
+			Online:     true,
 		}
 	}
 	printPlayerMap()
@@ -98,15 +98,15 @@ func main() {
 		//登入登出
 		if strings.Contains(line.Text, "left the game") {
 			playerMap[strings.TrimSpace(contents[3])] = playerStatus{
-				playerName: strings.TrimSpace(contents[3]),
-				ifOnline:   false,
+				PlayerName: strings.TrimSpace(contents[3]),
+				Online:     false,
 			}
 			log.Println(contents[3], "下线")
 			printPlayerMap()
 		} else if strings.Contains(line.Text, "joined the game") {
 			playerMap[strings.TrimSpace(contents[3])] = playerStatus{
-				playerName: strings.TrimSpace(contents[3]),
-				ifOnline:   true,
+				PlayerName: strings.TrimSpace(contents[3]),
+				Online:     true,
 			}
 			log.Println(contents[3], "上线")
 			printPlayerMap()
@@ -154,9 +154,9 @@ func main() {
 					go nightThrough(voteChan)
 				}
 				playerTmp := playerStatus{
-					playerName: playerName,
-					ifSleep:    true,
-					ifOnline:   true,
+					PlayerName: playerName,
+					Sleep:      true,
+					Online:     true,
 				}
 				//进行投票
 				voteChan <- playerTmp
@@ -168,16 +168,16 @@ func main() {
 func nightThrough(votes chan playerStatus) {
 	for vote := range votes {
 		log.Println(vote)
-		playerMap[vote.playerName] = vote
+		playerMap[vote.PlayerName] = vote
 		printPlayerMap()
 
 		//统计睡觉玩家数量
 		onlineNum := 0
 		sleepNum := 0
 		for _, player := range playerMap {
-			if player.ifOnline {
+			if player.Online {
 				onlineNum++
-				if player.ifSleep {
+				if player.Sleep {
 					sleepNum++
 				}
 			}
@@ -215,8 +215,8 @@ func nightThrough(votes chan playerStatus) {
 
 			//置醒
 			for _, player := range playerMap {
-				player.ifSleep = false
-				playerMap[player.playerName] = player
+				player.Sleep = false
+				playerMap[player.PlayerName] = player
 			}
 			printPlayerMap()
 			return
