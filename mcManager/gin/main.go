@@ -38,6 +38,7 @@ type playerStatus struct {
 
 var playerMap map[string]playerStatus
 var ifSleepVote bool
+var onlineNum int
 
 func main() {
 	voteChan := make(chan playerStatus, 20)
@@ -63,6 +64,7 @@ func main() {
 			PlayerName: strings.TrimSpace(n),
 			Online:     true,
 		}
+		onlineNum++
 	}
 	printPlayerMap()
 
@@ -101,6 +103,7 @@ func main() {
 				PlayerName: strings.TrimSpace(contents[3]),
 				Online:     false,
 			}
+			onlineNum--
 			log.Println(contents[3], "下线")
 			printPlayerMap()
 		} else if strings.Contains(line.Text, "joined the game") {
@@ -108,6 +111,7 @@ func main() {
 				PlayerName: strings.TrimSpace(contents[3]),
 				Online:     true,
 			}
+			onlineNum++
 			log.Println(contents[3], "上线")
 			printPlayerMap()
 		}
@@ -116,23 +120,35 @@ func main() {
 		var playerName string
 		if strings.HasPrefix(contents[3], "<") && strings.HasSuffix(contents[3], ">") {
 			playerName = contents[3][1 : len(contents[3])-1]
-			log.Println(playerName, contents[4])
+			log.Println(playerName, "说", contents[4])
 
 			if strings.HasPrefix(contents[4], "一起睡觉") {
+				//查看时间
 				result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time query daytime\"")
-				log.Println("查询时间：", result)
 				if err != nil {
 					log.Fatal(err)
 					return
 				}
+				log.Println(result)
 				timeStr := strings.Fields(result)[3]
 				timeInt, err := strconv.Atoi(timeStr)
 				if err != nil {
 					log.Fatal("字符转换失败", timeStr)
 					return
 				}
+				//没到点
 				if timeInt < 14000 {
 					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 还不能睡觉哦\"")
+					if err != nil {
+						log.Fatal(err)
+						return
+					}
+					log.Println(result)
+					continue
+				}
+				//人数不够
+				if onlineNum <= 3 {
+					result, err = shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 3个人以上才开启\"")
 					if err != nil {
 						log.Fatal(err)
 						return
@@ -153,12 +169,13 @@ func main() {
 					ifSleepVote = true
 					go nightThrough(voteChan)
 				}
+
+				//进行投票
 				playerTmp := playerStatus{
 					PlayerName: playerName,
 					Sleep:      true,
 					Online:     true,
 				}
-				//进行投票
 				voteChan <- playerTmp
 			}
 		}
@@ -167,43 +184,26 @@ func main() {
 
 func nightThrough(votes chan playerStatus) {
 	for vote := range votes {
+		//投票
 		log.Println(vote)
 		playerMap[vote.PlayerName] = vote
 		printPlayerMap()
 
 		//统计睡觉玩家数量
-		onlineNum := 0
-		sleepNum := 0
+		online := 0
+		sleepy := 0
 		for _, player := range playerMap {
 			if player.Online {
-				onlineNum++
+				online++
 				if player.Sleep {
-					sleepNum++
+					sleepy++
 				}
 			}
 		}
-		if onlineNum == 1 {
-			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 1个人自生自灭吧\"")
-			if err != nil {
-				log.Fatal(err)
-				return
-			}
-			log.Println(result)
-			return
-		}
-		if onlineNum == 2 {
-			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"say 2个人一起睡有点少\"")
-			if err != nil {
-				log.Fatal(err)
-				return
-			}
-			log.Println(result)
-			return
-		}
-		log.Println("sleepNum:"+strconv.Itoa(sleepNum), "onlineNum:"+strconv.Itoa(onlineNum))
+		log.Println("sleey:"+strconv.Itoa(sleepy), "online:"+strconv.Itoa(online))
 
 		//在线玩家睡觉超过一半
-		if sleepNum > (onlineNum / 2) {
+		if sleepy > (online / 2) {
 			ifSleepVote = false
 			//执行白天
 			result, err := shell("cd /root/Minecraft/rcon-0.10.2-amd64_linux/ && ./rcon --config=rcon.yaml \"time set 1000\"")
